@@ -263,13 +263,21 @@ def convert():
     if request.headers.get("X-API-Key") != API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
 
+    # Debug: log what we received
+    debug = {
+        "content_type": request.content_type,
+        "files_keys": list(request.files.keys()),
+        "form_keys": list(request.form.keys()),
+        "data_length": len(request.data),
+    }
+
     # File check
     if "file" not in request.files:
-        return jsonify({"error": "No file provided — send a .docx as multipart field 'file'"}), 400
+        return jsonify({"error": "No file provided — send a .docx as multipart field 'file'", "debug": debug}), 400
 
     file = request.files["file"]
     if not file.filename.endswith(".docx"):
-        return jsonify({"error": "File must be a .docx"}), 400
+        return jsonify({"error": "File must be a .docx", "filename_received": file.filename}), 400
 
     # Save to temp file
     tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
@@ -290,7 +298,8 @@ def convert():
 
         # FTP upload
         if FTP_HOST and FTP_USER and FTP_PASS:
-            with ftplib.FTP(FTP_HOST, FTP_USER, FTP_PASS) as ftp:
+            with ftplib.FTP_TLS(FTP_HOST, FTP_USER, FTP_PASS) as ftp:
+                ftp.prot_p()  # switch to secure data connection
                 ensure_ftp_dir(ftp, FTP_BLOG_PATH)
                 posts_path = f"{FTP_BLOG_PATH}/posts.json"
 

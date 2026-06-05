@@ -267,21 +267,16 @@ def convert():
     # Accept file either as multipart OR as raw binary body
     tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
     tmp_path = tmp.name
+    tmp.close()  # Close handle immediately so save can write cleanly
 
     if "file" in request.files:
-        # Multipart upload
-        file = request.files["file"]
-        file.save(tmp_path)
+        request.files["file"].save(tmp_path)
     elif request.data:
-        # Raw binary upload (easier from Make)
-        tmp.write(request.data)
-        tmp.flush()
+        with open(tmp_path, "wb") as f:
+            f.write(request.data)
     else:
-        tmp.close()
         os.unlink(tmp_path)
         return jsonify({"error": "No file provided. Send .docx as multipart field 'file' or as raw binary body."}), 400
-
-    tmp.close()
 
     try:
         # Convert

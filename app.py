@@ -278,6 +278,8 @@ def convert():
         os.unlink(tmp_path)
         return jsonify({"error": "No file provided. Send .docx as multipart field 'file' or as raw binary body."}), 400
 
+    file_size = os.path.getsize(tmp_path)
+
     try:
         # Convert
         doc  = Document(tmp_path)
@@ -325,7 +327,7 @@ def convert():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "file_size_bytes": file_size}), 500
 
     finally:
         os.unlink(tmp_path)

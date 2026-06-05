@@ -295,49 +295,39 @@ def convert():
         body_html = convert_body(tmp_path)
         post_html = build_post_html(meta, body_html)
 
-        # SFTP upload
-        if FTP_HOST and FTP_USER and FTP_PASS:
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(FTP_HOST, port=22, username=FTP_USER, password=FTP_PASS)
-            sftp = ssh.open_sftp()
-            try:
-                ensure_sftp_dir(sftp, FTP_BLOG_PATH)
-                posts_path = f"{FTP_BLOG_PATH}/posts.json"
-                posts = sftp_read_json(sftp, posts_path)
-                posts = [p for p in posts if p.get("slug") != slug]
-                posts.append({
-                    "slug":     slug,
-                    "title":    meta["title"],
-                    "date":     meta["date"],
-                    "date_iso": datetime.date.today().isoformat(),
-                    "author":   meta["author"],
-                    "category": meta["category"],
-                    "excerpt":  meta["excerpt"],
-                })
-                index_html = build_index_html(posts)
-                sftp_write(sftp, f"{FTP_BLOG_PATH}/{slug}.html", post_html)
-                sftp_write(sftp, f"{FTP_BLOG_PATH}/index.html", index_html)
-                sftp_write(sftp, posts_path, json.dumps(posts, indent=2))
-            finally:
-                sftp.close()
-                ssh.close()
+        # Update posts list — accepts current posts.json from Make via form field
+        current_posts_json = request.form.get("posts_json", "[]")
+        try:
+            posts = json.loads(current_posts_json)
+        except Exception:
+            posts = []
 
-            return jsonify({
-                "success":  True,
-                "slug":     slug,
-                "title":    meta["title"],
-                "message":  f"Published to SiteGround: blog/{slug}.html"
-            })
-        else:
-            # No FTP configured — return the HTML directly for testing
-            return jsonify({
-                "success":   True,
-                "slug":      slug,
-                "title":     meta["title"],
-                "post_html": post_html,
-                "message":   "Converted OK (FTP not configured — HTML returned in response)"
-            })
+        posts = [p for p in posts if p.get("slug") != slug]
+        posts.append({
+            "slug":     slug,
+            "title":    meta["title"],
+            "date":     meta["date"],
+            "date_iso": datetime.date.today().isoformat(),
+            "author":   meta["author"],
+            "category": meta["category"],
+            "excerpt":  meta["excerpt"],
+        })
+
+        index_html  = build_index_html(posts)
+        posts_json  = json.dumps(posts, indent=2)
+        post_filename = f"{slug}.html"
+
+        # Return all three files for Make to upload via FTP
+        return jsonify({
+            "success":      True,
+            "slug":         slug,
+            "title":        meta["title"],
+            "post_filename": post_filename,
+            "post_html":    post_html,
+            "index_html":   index_html,
+            "posts_json":   posts_json,
+            "message":      f"Converted OK — upload {post_filename}, index.html and posts.json"
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

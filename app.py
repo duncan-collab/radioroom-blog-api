@@ -263,26 +263,24 @@ def convert():
     if request.headers.get("X-API-Key") != API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
 
-    # Debug: log what we received
-    debug = {
-        "content_type": request.content_type,
-        "files_keys": list(request.files.keys()),
-        "form_keys": list(request.form.keys()),
-        "data_length": len(request.data),
-    }
-
-    # File check
-    if "file" not in request.files:
-        return jsonify({"error": "No file provided — send a .docx as multipart field 'file'", "debug": debug}), 400
-
-    file = request.files["file"]
-    if not file.filename.endswith(".docx"):
-        return jsonify({"error": "File must be a .docx", "filename_received": file.filename}), 400
-
-    # Save to temp file
+    # Accept file either as multipart OR as raw binary body
     tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
-    file.save(tmp.name)
     tmp_path = tmp.name
+
+    if "file" in request.files:
+        # Multipart upload
+        file = request.files["file"]
+        file.save(tmp_path)
+    elif request.data:
+        # Raw binary upload (easier from Make)
+        tmp.write(request.data)
+        tmp.flush()
+    else:
+        tmp.close()
+        os.unlink(tmp_path)
+        return jsonify({"error": "No file provided. Send .docx as multipart field 'file' or as raw binary body."}), 400
+
+    tmp.close()
 
     try:
         # Convert

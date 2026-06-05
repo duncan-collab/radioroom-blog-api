@@ -11,6 +11,10 @@ Environment variables (set in Render dashboard):
 """
 
 import os, io, re, json, ftplib, tempfile, datetime
+try:
+    import paramiko
+except ImportError:
+    paramiko = None
 from flask import Flask, request, jsonify
 
 import mammoth
@@ -231,25 +235,22 @@ def build_index_html(posts):
 </body>
 </html>"""
 
-# ── FTP helpers ───────────────────────────────────────────────────────────────
-def ftp_read_json(ftp, path):
-    """Read a JSON file from FTP, return parsed object or []."""
+# ── SFTP helpers ──────────────────────────────────────────────────────────────
+def sftp_read_json(sftp, path):
     try:
-        buf = io.BytesIO()
-        ftp.retrbinary(f"RETR {path}", buf.write)
-        return json.loads(buf.getvalue().decode("utf-8"))
+        with sftp.file(path, "r") as f:
+            return json.loads(f.read().decode("utf-8"))
     except Exception:
         return []
 
-def ftp_write(ftp, path, content):
-    """Write a string to a file on FTP."""
-    ftp.storbinary(f"STOR {path}", io.BytesIO(content.encode("utf-8")))
+def sftp_write(sftp, path, content):
+    with sftp.file(path, "w") as f:
+        f.write(content.encode("utf-8"))
 
-def ensure_ftp_dir(ftp, path):
-    """Create directory on FTP if it doesn't exist."""
+def ensure_sftp_dir(sftp, path):
     try:
-        ftp.mkd(path)
-    except ftplib.error_perm:
+        sftp.mkdir(path)
+    except Exception:
         pass  # already exists
 
 # ── API routes ────────────────────────────────────────────────────────────────
@@ -294,15 +295,16 @@ def convert():
         body_html = convert_body(tmp_path)
         post_html = build_post_html(meta, body_html)
 
-        # FTP upload
+        # SFTP upload
         if FTP_HOST and FTP_USER and FTP_PASS:
-            with ftplib.FTP_TLS(FTP_HOST, FTP_USER, FTP_PASS) as ftp:
-                ftp.prot_p()  # switch to secure data connection
-                ensure_ftp_dir(ftp, FTP_BLOG_PATH)
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(FTP_HOST, port=22, username=FTP_USER, password=FTP_PASS)
+            sftp = ssh.open_sftp()
+            try:
+                ensure_sftp_dir(sftp, FTP_BLOG_PATH)
                 posts_path = f"{FTP_BLOG_PATH}/posts.json"
-
-                # Load existing posts
-                posts = ftp_read_json(ftp, posts_path)
+                posts = sftp_read_json(sftp, posts_path)
                 posts = [p for p in posts if p.get("slug") != slug]
                 posts.append({
                     "slug":     slug,
@@ -313,12 +315,13 @@ def convert():
                     "category": meta["category"],
                     "excerpt":  meta["excerpt"],
                 })
-
                 index_html = build_index_html(posts)
-
-                ftp_write(ftp, f"{FTP_BLOG_PATH}/{slug}.html", post_html)
-                ftp_write(ftp, f"{FTP_BLOG_PATH}/index.html", index_html)
-                ftp_write(ftp, posts_path, json.dumps(posts, indent=2))
+                sftp_write(sftp, f"{FTP_BLOG_PATH}/{slug}.html", post_html)
+                sftp_write(sftp, f"{FTP_BLOG_PATH}/index.html", index_html)
+                sftp_write(sftp, posts_path, json.dumps(posts, indent=2))
+            finally:
+                sftp.close()
+                ssh.close()
 
             return jsonify({
                 "success":  True,

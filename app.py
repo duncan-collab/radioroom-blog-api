@@ -279,6 +279,8 @@ def convert():
         return jsonify({"error": "No file provided. Send .docx as multipart field 'file' or as raw binary body."}), 400
 
     file_size = os.path.getsize(tmp_path)
+    with open(tmp_path, "rb") as f:
+        first_bytes = f.read(4).hex()  # ZIP/DOCX starts with 504b0304
 
     try:
         # Convert
@@ -327,7 +329,7 @@ def convert():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e), "file_size_bytes": file_size}), 500
+        return jsonify({"error": str(e), "file_size_bytes": file_size, "first_bytes_hex": first_bytes}), 500
 
     finally:
         os.unlink(tmp_path)

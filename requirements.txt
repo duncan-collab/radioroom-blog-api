@@ -2,3 +2,4 @@ flask
 mammoth
 python-docx
 gunicorn
+paramiko
